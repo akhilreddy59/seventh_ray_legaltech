@@ -26,15 +26,15 @@ public class ContractService {
         this.storage = storage;
     }
 
-    public List<Contract> list() {
-        return repository.findAll();
+    public List<Contract> list(UUID ownerId) {
+        return repository.findAll(ownerId);
     }
 
-    public Contract get(UUID id) {
-        return repository.findById(id).orElseThrow(() -> new ContractNotFoundException(id));
+    public Contract get(UUID id, UUID ownerId) {
+        return repository.findById(id, ownerId).orElseThrow(() -> new ContractNotFoundException(id));
     }
 
-    public Contract create(String title, MultipartFile file) {
+    public Contract create(String title, MultipartFile file, UUID ownerId) {
         if (file == null || file.isEmpty()) throw new com.seventhray.contractmanager.web.InvalidUploadException("Choose a PDF or DOCX file to upload.");
         String fileName = file.getOriginalFilename() == null ? "" : file.getOriginalFilename();
         if (fileName.length() > 255) throw new com.seventhray.contractmanager.web.InvalidUploadException("The original filename must be 255 characters or fewer.");
@@ -51,12 +51,12 @@ public class ContractService {
 
         UUID id = UUID.randomUUID();
         String extension = fileName.substring(fileName.lastIndexOf('.') + 1).toLowerCase();
-        String storagePath = "contracts/" + id + "." + extension;
+        String storagePath = ownerId + "/contracts/" + id + "." + extension;
         storage.upload(storagePath, document.contentType(), bytes);
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         Contract contract = new Contract(id, contractTitle, fileName, storagePath, ContractStatus.DRAFT, document.text(), now, now);
         try {
-            return repository.insert(contract);
+            return repository.insert(contract, ownerId);
         } catch (RuntimeException persistenceError) {
             try {
                 storage.delete(storagePath);
@@ -68,12 +68,12 @@ public class ContractService {
     }
 
     @Transactional
-    public Contract advance(UUID id) {
-        ContractStatus current = repository.findStatusForUpdate(id);
+    public Contract advance(UUID id, UUID ownerId) {
+        ContractStatus current = repository.findStatusForUpdate(id, ownerId);
         if (current == null) throw new ContractNotFoundException(id);
         ContractStatus next = current.next();
-        repository.updateStatus(id, next);
-        return get(id);
+        repository.updateStatus(id, ownerId, next);
+        return get(id, ownerId);
     }
 
     private static String titleFrom(String fileName) {

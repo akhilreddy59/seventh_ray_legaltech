@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
@@ -38,28 +39,30 @@ public class ContractController {
     }
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<?> create(@RequestParam(required = false) String title, @RequestPart("file") MultipartFile file) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("contract", ContractResponse.from(contracts.create(title, file))));
+    public ResponseEntity<?> create(@RequestParam(required = false) String title, @RequestPart("file") MultipartFile file,
+                                    @RequestAttribute("authenticatedUserId") UUID ownerId) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("contract", ContractResponse.from(contracts.create(title, file, ownerId))));
     }
 
     @GetMapping
-    public Map<String, ?> list() {
-        return Map.of("contracts", contracts.list().stream().map(ContractSummaryResponse::from).toList());
+    public Map<String, ?> list(@RequestAttribute("authenticatedUserId") UUID ownerId) {
+        return Map.of("contracts", contracts.list(ownerId).stream().map(ContractSummaryResponse::from).toList());
     }
 
     @GetMapping("/{id}")
-    public Map<String, ContractResponse> get(@PathVariable UUID id) {
-        return Map.of("contract", ContractResponse.from(contracts.get(id)));
+    public Map<String, ContractResponse> get(@PathVariable UUID id, @RequestAttribute("authenticatedUserId") UUID ownerId) {
+        return Map.of("contract", ContractResponse.from(contracts.get(id, ownerId)));
     }
 
     @PatchMapping("/{id}/status")
-    public Map<String, ContractResponse> advance(@PathVariable UUID id) {
-        return Map.of("contract", ContractResponse.from(contracts.advance(id)));
+    public Map<String, ContractResponse> advance(@PathVariable UUID id, @RequestAttribute("authenticatedUserId") UUID ownerId) {
+        return Map.of("contract", ContractResponse.from(contracts.advance(id, ownerId)));
     }
 
     @PostMapping("/{id}/questions")
-    public Map<String, String> ask(@PathVariable UUID id, @Valid @RequestBody QuestionRequest request) {
-        return Map.of("answer", questions.answer(contracts.get(id).extractedText(), request.question().trim()));
+    public Map<String, String> ask(@PathVariable UUID id, @Valid @RequestBody QuestionRequest request,
+                                   @RequestAttribute("authenticatedUserId") UUID ownerId) {
+        return Map.of("answer", questions.answer(contracts.get(id, ownerId).extractedText(), request.question().trim()));
     }
 
     public record QuestionRequest(@NotBlank @Size(max = 500) String question) {}
