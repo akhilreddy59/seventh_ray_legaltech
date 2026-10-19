@@ -6,6 +6,8 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.stereotype.Component;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
@@ -41,6 +43,8 @@ public class AuthenticatedUserFilter extends OncePerRequestFilter {
         try {
             UUID ownerId = auth.resolveUserId(authorization.substring(7).trim());
             request.setAttribute(OWNER_ID_ATTRIBUTE, ownerId);
+            SecurityContextHolder.getContext().setAuthentication(
+                    new UsernamePasswordAuthenticationToken(ownerId, null, java.util.List.of()));
             chain.doFilter(request, response);
         } catch (SupabaseAuthService.InvalidAccessTokenException ex) {
             reject(response, HttpServletResponse.SC_UNAUTHORIZED, "Your session is invalid or expired. Sign in again.");

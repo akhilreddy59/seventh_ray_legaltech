@@ -1,6 +1,8 @@
 package com.seventhray.contractmanager.web;
 
 import com.seventhray.contractmanager.config.AuthenticatedUserFilter;
+import com.seventhray.contractmanager.config.CorsConfig;
+import com.seventhray.contractmanager.config.SecurityConfig;
 import com.seventhray.contractmanager.model.Contract;
 import com.seventhray.contractmanager.model.ContractStatus;
 import com.seventhray.contractmanager.service.ContractService;
@@ -10,6 +12,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.context.annotation.Import;
@@ -33,7 +36,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest({ContractController.class, HealthController.class})
-@Import(AuthenticatedUserFilter.class)
+@Import({AuthenticatedUserFilter.class, CorsConfig.class, SecurityConfig.class})
 class ContractControllerTest {
     @Autowired private MockMvc mvc;
     @MockitoBean private ContractService contracts;
@@ -60,6 +63,32 @@ class ContractControllerTest {
         mvc.perform(get("/api/contracts"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error").value("Sign in to access your contracts."));
+    }
+
+    @Test
+    void corsPreflightAllowsProductionFrontendAndRequiredApiMethodsAndHeaders() throws Exception {
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options("/api/contracts")
+                        .header(HttpHeaders.ORIGIN, "https://seventh-ray-legaltech.vercel.app")
+                        .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "PATCH")
+                        .header(HttpHeaders.ACCESS_CONTROL_REQUEST_HEADERS, "authorization,content-type"))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+                        .string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "https://seventh-ray-legaltech.vercel.app"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+                        .string(HttpHeaders.ACCESS_CONTROL_ALLOW_METHODS, org.hamcrest.Matchers.containsString("DELETE")))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+                        .string(HttpHeaders.ACCESS_CONTROL_ALLOW_HEADERS, org.hamcrest.Matchers.containsString("authorization")));
+    }
+
+    @Test
+    void authenticatedApiResponseIncludesCorsHeadersAndStillVerifiesJwt() throws Exception {
+        when(contracts.list(ownerId)).thenReturn(List.of());
+        mvc.perform(get("/api/contracts")
+                        .header(HttpHeaders.ORIGIN, "https://seventh-ray-legaltech.vercel.app")
+                        .header("Authorization", "Bearer test-token"))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+                        .string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "https://seventh-ray-legaltech.vercel.app"));
     }
 
     @Test

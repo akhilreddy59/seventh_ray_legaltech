@@ -1,6 +1,6 @@
 # Contract Manager
 
-A minimal contract register with a React/Vite client and a Java 21 Spring Boot API. PostgreSQL stores contract metadata and extracted text; original files live in a private Supabase Storage bucket. The workflow supports `DRAFT → REVIEW → APPROVED` and keyword-based answers sourced from uploaded documents.
+A minimal contract register with a React/Vite client and a Java 21 Spring Boot API. Each person signs in with a pre-created Supabase Auth account; the API verifies their access token and scopes contract metadata and private file paths to that account. PostgreSQL stores contract metadata and extracted text; originals live in a private Supabase Storage bucket. The workflow supports `DRAFT → REVIEW → APPROVED` and keyword-based answers sourced from uploaded documents.
 
 ## Repository layout
 
@@ -13,9 +13,10 @@ This is one repository with two separately deployed applications. Node.js and th
 ## Supabase setup
 
 1. Create a Supabase project and a private Storage bucket named `contracts`.
-2. Run [`server/src/main/resources/db/migration/V1__create_contracts.sql`](server/src/main/resources/db/migration/V1__create_contracts.sql) in the Supabase SQL Editor to create the schema manually. The same Flyway migration runs on application startup. Flyway baseline version `0` and idempotent DDL allow startup to record a schema created by this script.
-3. Copy `server/.env.example` to `server/.env` for local development, then replace every `YOUR_...` value with your Supabase credentials. Use a TLS-enabled connection (`sslmode=require`). For Render, use the Supabase **session pooler** (port `5432`) if direct IPv6 connectivity is unavailable. Avoid transaction pooler port `6543` for this Flyway/JDBC service.
-4. Keep the service-role key and database password in the server's environment only. Do not put them in Vercel variables, frontend files, or Git.
+2. Run [`server/src/main/resources/db/migration/V1__create_contracts.sql`](server/src/main/resources/db/migration/V1__create_contracts.sql) in the SQL Editor if the contracts table does not exist. Run [`server/src/main/resources/db/migration/V2__add_contract_ownership.sql`](server/src/main/resources/db/migration/V2__add_contract_ownership.sql) to add the per-user owner column and index. V2 is the new migration for an existing install; apply it before deploying this version. Flyway will also run pending migrations on server startup.
+3. In Supabase **Authentication → Users**, create an account for each person and provide each person their own email and password. This app has no public sign-up. Their email is the login ID. Never share one account between users.
+4. Copy `server/.env.example` to `server/.env` for local development, then replace the `YOUR_...` values. Use a TLS-enabled database connection (`sslmode=require`). For Render, use the Supabase **session pooler** (port `5432`) if direct IPv6 connectivity is unavailable. Avoid transaction pooler port `6543` for this Flyway/JDBC service.
+5. Keep the service-role key and database password in the server's environment only. The anon/publishable key is public and is also configured in the client. Never put the service-role key in Vercel, frontend files, or Git.
 
 | Server variable | Purpose |
 | --- | --- |
@@ -23,12 +24,15 @@ This is one repository with two separately deployed applications. Node.js and th
 | `SUPABASE_DB_USER` | PostgreSQL user; pooler usernames can include the project reference |
 | `SUPABASE_DB_PASSWORD` | PostgreSQL password |
 | `SUPABASE_URL` | Project URL, e.g. `https://PROJECT_REF.supabase.co` |
+| `SUPABASE_ANON_KEY` | Supabase public anon/publishable key used by the API to verify access tokens |
 | `SUPABASE_SERVICE_ROLE_KEY` | Server-only Storage credential |
 | `SUPABASE_STORAGE_BUCKET` | Private bucket name; defaults to `contracts` |
-| `CORS_ALLOWED_ORIGINS` | Comma-separated allowed frontend origins, without paths |
+| `CORS_ALLOWED_ORIGINS` | `https://seventh-ray-legaltech.vercel.app,http://localhost:5173` (comma-separated exact origins, no paths or trailing slashes) |
 | `PORT` | HTTP port; defaults to Render's `10000`; local `.env.example` sets it to `8080` |
 
-There are no real credentials in the repository. Local file uploads are not used; files are stored in Supabase Storage.
+The client also needs `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in addition to `VITE_API_BASE_URL`. These three values are safe client configuration; do not put the service-role key in the client. There are no real credentials in the repository. Local file uploads are not used; files are stored in Supabase Storage.
+
+Existing contracts will have a null owner after V2 and therefore will not appear in any user's register. If you want to assign old rows to one account, sign in once, get that user's UUID from Supabase Authentication → Users, and run `UPDATE public.contracts SET owner_id = 'USER_UUID' WHERE owner_id IS NULL;` in the SQL Editor. Do this only if those old documents belong to that person.
 
 ## Local development
 
@@ -49,7 +53,7 @@ Get-Content .env | Where-Object { $_ -match '^[A-Za-z_][A-Za-z0-9_]*=' } | ForEa
 mvn spring-boot:run
 ```
 
-Copy `client/.env.example` to `client/.env` for local development. It points to the local Spring Boot API at `http://localhost:8080/api`. Then run the frontend:
+Copy `client/.env.example` to `client/.env` for local development. Set its `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` from Supabase; keep its API URL at `http://localhost:8080/api`. Then run the frontend:
 
 ```sh
 cd client
@@ -62,6 +66,8 @@ All browser API requests use `VITE_API_BASE_URL`. Configure it at build time for
 ## API
 
 All endpoints return JSON; errors use `{ "error": "..." }`.
+
+`GET /api/health` is public. Every `/api/contracts` endpoint requires `Authorization: Bearer <Supabase access token>`. The API verifies the token with Supabase Auth, then uses the verified user UUID for every contract query and upload path; it does not accept an owner ID from the browser.
 
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
@@ -98,7 +104,7 @@ Create a Blueprint from this repository, or configure a Web Service with these e
 
 The Docker build uses Maven and Eclipse Temurin Java 21, then starts the executable Spring Boot jar. To build and run it locally from `server/`, use `mvn -DskipTests package` and `java -jar target/contract-manager-1.0.0.jar`.
 
-Set these Render environment variables: `SUPABASE_DB_URL`, `SUPABASE_DB_USER`, `SUPABASE_DB_PASSWORD`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `CORS_ALLOWED_ORIGINS`. Set `SUPABASE_STORAGE_BUCKET=contracts`; Render supplies `PORT`. Mark credentials as secret. Set CORS to the exact deployed Vercel origin, for example `https://your-project.vercel.app`; add a custom domain origin if used. Do not include a path or trailing slash.
+Set these Render environment variables: `SUPABASE_DB_URL`, `SUPABASE_DB_USER`, `SUPABASE_DB_PASSWORD`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, and `CORS_ALLOWED_ORIGINS`. Set `SUPABASE_STORAGE_BUCKET=contracts`; Render supplies `PORT`. Mark the database password and service-role key as secret. For this deployment, set `CORS_ALLOWED_ORIGINS=https://seventh-ray-legaltech.vercel.app,http://localhost:5173`. Keep origins comma-separated with no paths or trailing slashes. Add a custom domain origin only if the frontend uses one.
 
 If Render logs `password authentication failed for user "postgres"`, check the three database values in Render's **Environment** settings. Copy the JDBC host and port from Supabase **Connect**. For the shared session pooler (port `5432`), set the username to `postgres.YOUR_PROJECT_REF`; for a direct database connection, use `postgres`. Set `SUPABASE_DB_PASSWORD` to the current database password from Supabase (reset it there if needed), entered separately from the JDBC URL. Redeploy after saving the corrected values. This credential error prevents Flyway and Spring Boot from starting, which also causes Render's “No open ports detected” message.
 
@@ -115,8 +121,10 @@ Import the same repository as a separate Vercel project with:
 | Build Command | `npm run build` |
 | Output Directory | `dist` |
 | Environment Variable | `VITE_API_BASE_URL=https://YOUR-RENDER-SERVICE.onrender.com/api` |
+| Environment Variable | `VITE_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co` |
+| Environment Variable | `VITE_SUPABASE_ANON_KEY=YOUR_SUPABASE_PUBLIC_ANON_OR_PUBLISHABLE_KEY` |
 
-Replace `YOUR-RENDER-SERVICE` with the actual Render hostname and set this variable in Vercel for Production and any Preview/Development environments that should use the deployed API. It must include `/api`; Vite embeds this public API URL into the client bundle. Do not add Supabase credentials to Vercel. The committed `client/.env.example` is for local development; production API URL is configured in Vercel.
+Replace the placeholder values with your project details and set all three variables in Vercel for Production and any Preview/Development environments. The API URL must include `/api`. The anon/publishable key is public; do not add the service-role key to Vercel.
 
 ## Build and tests
 

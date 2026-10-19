@@ -1,11 +1,28 @@
 import { useEffect, useRef, useState } from 'react';
+import { supabase } from './supabase.js';
 
 const API = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '');
 const nextStatus = { DRAFT: 'REVIEW', REVIEW: 'APPROVED' };
 
 async function request(path, options = {}) {
   if (!API) throw new Error('Set VITE_API_BASE_URL to the Spring Boot API URL.');
-  const response = await fetch(`${API}${path}`, options);
+  if (!supabase) throw new Error('Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to enable sign-in.');
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('Sign in to access your contracts.');
+  const send = (token) => {
+    const headers = new Headers(options.headers || {});
+    headers.set('Authorization', `Bearer ${token}`);
+    return fetch(`${API}${path}`, { ...options, headers });
+  };
+  let response = await send(session.access_token);
+  if (response.status === 401) {
+    const { data, error } = await supabase.auth.refreshSession();
+    if (error || !data.session) {
+      await supabase.auth.signOut();
+      throw new Error('Your session expired. Sign in again.');
+    }
+    response = await send(data.session.access_token);
+  }
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(body.error || 'Something went wrong. Please try again.');
   return body;
@@ -14,6 +31,12 @@ async function request(path, options = {}) {
 function date(value) { return new Date(value).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }); }
 
 export default function App() {
+  const [session, setSession] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authError, setAuthError] = useState('');
   const [contracts, setContracts] = useState([]);
   const [selected, setSelected] = useState(null);
   const [title, setTitle] = useState('');
@@ -38,7 +61,43 @@ export default function App() {
     setQuestion('');
   }
 
-  useEffect(() => { loadContracts().catch((err) => setError(err.message)); }, []);
+  useEffect(() => {
+    if (!supabase) { setAuthReady(true); return undefined; }
+    supabase.auth.getSession().then(({ data, error: sessionError }) => {
+      if (sessionError) setAuthError(sessionError.message);
+      setSession(data.session);
+    }).catch((sessionError) => setAuthError(sessionError.message)).finally(() => setAuthReady(true));
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+      setAuthReady(true);
+      if (!nextSession) { setContracts([]); setSelected(null); }
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (session?.user?.id) loadContracts().catch((err) => setError(err.message));
+  }, [session?.user?.id]);
+
+  async function signIn(event) {
+    event.preventDefault();
+    if (!supabase) return setAuthError('Sign-in is not configured yet. Add the Supabase URL and public key to the client environment.');
+    setAuthBusy(true); setAuthError('');
+    try {
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+      if (signInError) setAuthError(signInError.message);
+      else { setSession(data.session); setPassword(''); }
+    } catch (signInError) {
+      setAuthError(signInError.message || 'Could not reach Supabase Auth. Try again.');
+    } finally { setAuthBusy(false); }
+  }
+
+  async function signOut() {
+    if (supabase) await supabase.auth.signOut();
+    setSession(null);
+    setContracts([]);
+    setSelected(null);
+  }
 
   async function upload(event) {
     event.preventDefault();
@@ -70,8 +129,30 @@ export default function App() {
     finally { setBusy(false); }
   }
 
+  if (!authReady) return <main className="page auth-page"><div className="topbar"><a className="wordmark" href="#top">CM<span>.</span></a><div className="topbar-date">CONTRACT REGISTER</div></div><p className="auth-loading">Preparing your private workspace…</p></main>;
+
+  if (!session) return <main className="page auth-page">
+    <header className="topbar"><a className="wordmark" href="#top">CM<span>.</span></a><div className="topbar-note">A quiet place for your agreements</div><div className="topbar-date">PRIVATE CONTRACT REGISTER</div></header>
+    <section className="auth-card">
+      <div className="eyebrow">YOUR PRIVATE WORKSPACE</div>
+      <h1>Welcome back.</h1>
+      <p>Sign in to see and manage your contracts.</p>
+      <form onSubmit={signIn}>
+        <label className="field-label" htmlFor="login-email">Account email</label>
+        <input id="login-email" type="email" autoComplete="username" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" />
+        <label className="field-label" htmlFor="login-password">Password</label>
+        <input id="login-password" type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Your password" />
+        <button className="button button-dark auth-submit" disabled={authBusy || !supabase}>{authBusy ? 'Signing in…' : 'Sign in'} <span aria-hidden="true">↗</span></button>
+      </form>
+      {!supabase && <div className="auth-message">Sign-in is not configured. Add the Supabase URL and public key to the Vercel client environment, then redeploy.</div>}
+      {authError && <div className="auth-message auth-message-error" role="alert">{authError}</div>}
+      <div className="auth-note">Accounts are provided by your administrator.</div>
+    </section>
+    <footer className="footer"><span>CONTRACT MANAGER</span><span>PRIVATE, BY DESIGN.</span></footer>
+  </main>;
+
   return <main className="page">
-    <header className="topbar"><a className="wordmark" href="#top">CM<span>.</span></a><div className="topbar-note">A quiet place for your agreements</div><div className="topbar-date">CONTRACT REGISTER</div></header>
+      <header className="topbar"><a className="wordmark" href="#top">CM<span>.</span></a><div className="topbar-note">A quiet place for your agreements</div><div className="account-menu"><span>{session?.user?.email}</span><button onClick={signOut}>Sign out</button></div></header>
     <section className="intro" id="top"><div className="eyebrow">YOUR DOCUMENTS, IN ORDER</div><h1>Contract Manager</h1><p>Keep the important details close, and the paperwork in its place.</p></section>
     <div className="workspace">
       <aside className="register">
