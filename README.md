@@ -14,7 +14,7 @@ This is one repository with two separately deployed applications. Node.js and th
 
 1. Create a Supabase project and a private Storage bucket named `contracts`.
 2. Run [`server/src/main/resources/db/migration/V1__create_contracts.sql`](server/src/main/resources/db/migration/V1__create_contracts.sql) in the Supabase SQL Editor to create the schema manually. The same Flyway migration runs on application startup. Flyway baseline version `0` and idempotent DDL allow startup to record a schema created by this script.
-3. Copy `server/.env.example` to `server/.env` for local development. Fill in the PostgreSQL connection URL, database user/password, project URL, and service-role key. Use a TLS-enabled Supabase connection (`sslmode=require`); for Render, use the Supabase session pooler if direct IPv6 connectivity is unavailable.
+3. Copy `server/.env.example` to `server/.env` for local development, then replace every `YOUR_...` value with your Supabase credentials. Use a TLS-enabled Supabase connection (`sslmode=require`); for Render, use the Supabase session pooler if direct IPv6 connectivity is unavailable. The example is placeholders only; never commit your filled-in `.env`.
 4. Keep the service-role key and database password in the server's environment only. Do not put them in Vercel variables, frontend files, or Git.
 
 | Server variable | Purpose |
@@ -49,7 +49,7 @@ Get-Content .env | Where-Object { $_ -match '^[A-Za-z_][A-Za-z0-9_]*=' } | ForEa
 mvn spring-boot:run
 ```
 
-Set `client/.env` to `VITE_API_BASE_URL=http://localhost:8080/api` for local development, then run the frontend:
+Copy `client/.env.example` to `client/.env` for local development. It points to the local Spring Boot API at `http://localhost:8080/api`. Then run the frontend:
 
 ```sh
 cd client
@@ -114,7 +114,7 @@ Import the same repository as a separate Vercel project with:
 | Output Directory | `dist` |
 | Environment Variable | `VITE_API_BASE_URL=https://YOUR-RENDER-SERVICE.onrender.com/api` |
 
-Set `VITE_API_BASE_URL` for Production and any Preview/Development environments that should use the deployed API. It must include `/api`; Vite embeds this public API URL into the client bundle. Do not add Supabase credentials to Vercel.
+Replace `YOUR-RENDER-SERVICE` with the actual Render hostname and set this variable in Vercel for Production and any Preview/Development environments that should use the deployed API. It must include `/api`; Vite embeds this public API URL into the client bundle. Do not add Supabase credentials to Vercel. The committed `client/.env.example` is for local development; production API URL is configured in Vercel.
 
 ## Build and tests
 
