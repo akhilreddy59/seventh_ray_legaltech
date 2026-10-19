@@ -14,19 +14,19 @@ This is one repository with two separately deployed applications. Node.js and th
 
 1. Create a Supabase project and a private Storage bucket named `contracts`.
 2. Run [`server/src/main/resources/db/migration/V1__create_contracts.sql`](server/src/main/resources/db/migration/V1__create_contracts.sql) in the Supabase SQL Editor to create the schema manually. The same Flyway migration runs on application startup. Flyway baseline version `0` and idempotent DDL allow startup to record a schema created by this script.
-3. Copy `server/.env.example` to `server/.env` for local development, then replace every `YOUR_...` value with your Supabase credentials. Use a TLS-enabled Supabase connection (`sslmode=require`); for Render, use the Supabase session pooler if direct IPv6 connectivity is unavailable. The example is placeholders only; never commit your filled-in `.env`.
+3. Copy `server/.env.example` to `server/.env` for local development, then replace every `YOUR_...` value with your Supabase credentials. Use a TLS-enabled connection (`sslmode=require`). For Render, use the Supabase **session pooler** (port `5432`) if direct IPv6 connectivity is unavailable. Avoid transaction pooler port `6543` for this Flyway/JDBC service.
 4. Keep the service-role key and database password in the server's environment only. Do not put them in Vercel variables, frontend files, or Git.
 
 | Server variable | Purpose |
 | --- | --- |
-| `SUPABASE_DB_URL` | JDBC URL, e.g. `jdbc:postgresql://HOST:5432/postgres?sslmode=require` |
+| `SUPABASE_DB_URL` | JDBC URL, e.g. `jdbc:postgresql://YOUR_SESSION_POOLER_HOST:5432/postgres?sslmode=require` |
 | `SUPABASE_DB_USER` | PostgreSQL user; pooler usernames can include the project reference |
 | `SUPABASE_DB_PASSWORD` | PostgreSQL password |
 | `SUPABASE_URL` | Project URL, e.g. `https://PROJECT_REF.supabase.co` |
 | `SUPABASE_SERVICE_ROLE_KEY` | Server-only Storage credential |
 | `SUPABASE_STORAGE_BUCKET` | Private bucket name; defaults to `contracts` |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated allowed frontend origins, without paths |
-| `PORT` | HTTP port; defaults to `8080` (Render sets its service port) |
+| `PORT` | HTTP port; defaults to Render's `10000`; local `.env.example` sets it to `8080` |
 
 There are no real credentials in the repository. Local file uploads are not used; files are stored in Supabase Storage.
 
@@ -99,6 +99,8 @@ Create a Blueprint from this repository, or configure a Web Service with these e
 The Docker build uses Maven and Eclipse Temurin Java 21, then starts the executable Spring Boot jar. To build and run it locally from `server/`, use `mvn -DskipTests package` and `java -jar target/contract-manager-1.0.0.jar`.
 
 Set these Render environment variables: `SUPABASE_DB_URL`, `SUPABASE_DB_USER`, `SUPABASE_DB_PASSWORD`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `CORS_ALLOWED_ORIGINS`. Set `SUPABASE_STORAGE_BUCKET=contracts`; Render supplies `PORT`. Mark credentials as secret. Set CORS to the exact deployed Vercel origin, for example `https://your-project.vercel.app`; add a custom domain origin if used. Do not include a path or trailing slash.
+
+If Render logs `password authentication failed for user "postgres"`, check the three database values in Render's **Environment** settings. Copy the JDBC host and port from Supabase **Connect**. For the shared session pooler (port `5432`), set the username to `postgres.YOUR_PROJECT_REF`; for a direct database connection, use `postgres`. Set `SUPABASE_DB_PASSWORD` to the current database password from Supabase (reset it there if needed), entered separately from the JDBC URL. Redeploy after saving the corrected values. This credential error prevents Flyway and Spring Boot from starting, which also causes Render's “No open ports detected” message.
 
 Flyway applies/records migrations during startup. The database schema script is also provided for manual setup in Supabase. This project uses persistent Supabase Storage for documents and does not depend on Render's ephemeral filesystem.
 
