@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 const API = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '');
 const nextStatus = { DRAFT: 'REVIEW', REVIEW: 'APPROVED' };
@@ -18,6 +18,7 @@ export default function App() {
   const [selected, setSelected] = useState(null);
   const [title, setTitle] = useState('');
   const [file, setFile] = useState(null);
+  const fileInput = useRef(null);
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState('');
   const [busy, setBusy] = useState(false);
@@ -41,13 +42,13 @@ export default function App() {
 
   async function upload(event) {
     event.preventDefault();
-    const formElement = event.currentTarget;
     if (!file) return setError('Choose a PDF or DOCX file to upload.');
     setBusy(true); setError(''); setNotice('');
     const form = new FormData(); form.append('file', file); if (title.trim()) form.append('title', title.trim());
     try {
       const data = await request('/contracts', { method: 'POST', body: form });
-      setTitle(''); setFile(null); formElement.reset();
+      setTitle(''); setFile(null);
+      if (fileInput.current) fileInput.current.value = '';
       await loadContracts(data.contract.id);
       setNotice('Contract added to your register.');
     } catch (err) { setError(err.message); }
@@ -78,7 +79,7 @@ export default function App() {
         <form className="upload-card" onSubmit={upload}>
           <label className="field-label" htmlFor="contract-title">Add a contract</label>
           <input id="contract-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title (optional)" maxLength="200" />
-          <label className="file-picker"><span>{file ? file.name : 'Choose a PDF or DOCX'}</span><input type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={(e) => setFile(e.target.files?.[0] || null)} /></label>
+          <label className="file-picker"><span>{file ? file.name : 'Choose a PDF or DOCX'}</span><input ref={fileInput} type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={(e) => setFile(e.target.files?.[0] || null)} /></label>
           <button className="button button-dark upload-button" disabled={busy}>{busy ? 'Please wait…' : 'Upload contract'} <span aria-hidden="true">↗</span></button>
           <div className="hint">PDF or DOCX · up to 10 MB</div>
         </form>
