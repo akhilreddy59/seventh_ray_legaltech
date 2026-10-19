@@ -41,12 +41,13 @@ export default function App() {
 
   async function upload(event) {
     event.preventDefault();
+    const formElement = event.currentTarget;
     if (!file) return setError('Choose a PDF or DOCX file to upload.');
     setBusy(true); setError(''); setNotice('');
     const form = new FormData(); form.append('file', file); if (title.trim()) form.append('title', title.trim());
     try {
       const data = await request('/contracts', { method: 'POST', body: form });
-      setTitle(''); setFile(null); event.currentTarget.reset();
+      setTitle(''); setFile(null); formElement.reset();
       await loadContracts(data.contract.id);
       setNotice('Contract added to your register.');
     } catch (err) { setError(err.message); }
