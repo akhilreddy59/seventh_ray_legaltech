@@ -1,55 +1,130 @@
 # Contract Manager
 
-A small contract register built with React, Vite, Express, and PostgreSQL. It stores uploaded originals privately on the server, extracts text from PDF and DOCX files, enforces the `DRAFT → REVIEW → APPROVED` workflow, and answers questions by finding matching document sentences.
+A minimal contract register with a React/Vite client and a Java 21 Spring Boot API. PostgreSQL stores contract metadata and extracted text; original files live in a private Supabase Storage bucket. The workflow supports `DRAFT → REVIEW → APPROVED` and keyword-based answers sourced from uploaded documents.
 
-## Requirements
+## Repository layout
 
-- Node.js 20 or newer
-- PostgreSQL 13 or newer
+- `client/` — React/Vite app; deploy this directory to Vercel.
+- `server/` — Java 21/Spring Boot/Maven app; deploy this directory to Render.
+- `render.yaml` — Render Blueprint for the `server` Docker service.
 
-## Setup
+This is one repository with two separately deployed applications. Node.js and the package files under `client/` are required by Vite; there is no Node.js backend.
 
-1. Create a PostgreSQL database, for example `contract_manager`.
-2. Run `server/schema.sql` against that database.
-3. In `server`, copy `.env.example` to `.env` and set `DATABASE_URL`. Set `UPLOAD_DIR` only if you want originals stored outside the default `server/uploads` folder.
-4. In `client`, copy `.env.example` to `.env` if the API is not at `http://localhost:3001/api`.
-5. Install and start each application in separate terminals:
+## Supabase setup
 
-   ```sh
-   cd server
-   npm install
-   npm run dev
-   ```
+1. Create a Supabase project and a private Storage bucket named `contracts`.
+2. Run [`server/src/main/resources/db/migration/V1__create_contracts.sql`](server/src/main/resources/db/migration/V1__create_contracts.sql) in the Supabase SQL Editor to create the schema manually. The same Flyway migration runs on application startup. Flyway baseline version `0` and idempotent DDL allow startup to record a schema created by this script.
+3. Copy `server/.env.example` to `server/.env` for local development. Fill in the PostgreSQL connection URL, database user/password, project URL, and service-role key. Use a TLS-enabled Supabase connection (`sslmode=require`); for Render, use the Supabase session pooler if direct IPv6 connectivity is unavailable.
+4. Keep the service-role key and database password in the server's environment only. Do not put them in Vercel variables, frontend files, or Git.
 
-   ```sh
-   cd client
-   npm install
-   npm run dev
-   ```
+| Server variable | Purpose |
+| --- | --- |
+| `SUPABASE_DB_URL` | JDBC URL, e.g. `jdbc:postgresql://HOST:5432/postgres?sslmode=require` |
+| `SUPABASE_DB_USER` | PostgreSQL user; pooler usernames can include the project reference |
+| `SUPABASE_DB_PASSWORD` | PostgreSQL password |
+| `SUPABASE_URL` | Project URL, e.g. `https://PROJECT_REF.supabase.co` |
+| `SUPABASE_SERVICE_ROLE_KEY` | Server-only Storage credential |
+| `SUPABASE_STORAGE_BUCKET` | Private bucket name; defaults to `contracts` |
+| `CORS_ALLOWED_ORIGINS` | Comma-separated allowed frontend origins, without paths |
+| `PORT` | HTTP port; defaults to `8080` (Render sets its service port) |
 
-Open the Vite URL (normally `http://localhost:5173`). The API listens on port 3001 by default. `CLIENT_ORIGIN` controls the allowed browser origin. Uploads are limited to 10 MB and are not served as static files.
+There are no real credentials in the repository. Local file uploads are not used; files are stored in Supabase Storage.
+
+## Local development
+
+Requirements: Java 21, Maven, Node.js 20+, and npm. Set the server variables in your shell or IDE, then start the API:
+
+```sh
+cd server
+mvn spring-boot:run
+```
+
+For PowerShell, load the example local environment file into the current process before running Maven:
+
+```powershell
+Get-Content .env | Where-Object { $_ -match '^[A-Za-z_][A-Za-z0-9_]*=' } | ForEach-Object {
+  $name, $value = $_ -split '=', 2
+  [Environment]::SetEnvironmentVariable($name, $value, 'Process')
+}
+mvn spring-boot:run
+```
+
+Set `client/.env` to `VITE_API_BASE_URL=http://localhost:8080/api` for local development, then run the frontend:
+
+```sh
+cd client
+npm install
+npm run dev
+```
+
+All browser API requests use `VITE_API_BASE_URL`. Configure it at build time for each environment; production does not fall back to localhost.
 
 ## API
 
-All endpoints return JSON. Errors use `{ "error": "..." }`.
+All endpoints return JSON; errors use `{ "error": "..." }`.
 
-| Method | Path | Notes |
+| Method | Endpoint | Purpose |
 | --- | --- | --- |
-| `GET` | `/api/health` | Process health check; does not check database connectivity |
-| `POST` | `/api/contracts` | Multipart form with `file` (PDF/DOCX) and optional `title` |
-| `GET` | `/api/contracts` | List contracts, newest first |
-| `GET` | `/api/contracts/:id` | Contract details and extracted text |
-| `PATCH` | `/api/contracts/:id/status` | Advances one allowed workflow step; no client status field |
-| `POST` | `/api/contracts/:id/questions` | JSON body: `{ "question": "When does it begin?" }` |
+| `GET` | `/api/health` | Health check |
+| `POST` | `/api/contracts` | Multipart upload with `file` and optional `title` |
+| `GET` | `/api/contracts` | List contracts |
+| `GET` | `/api/contracts/{id}` | Contract details and extracted text |
+| `PATCH` | `/api/contracts/{id}/status` | Advance one workflow step |
+| `POST` | `/api/contracts/{id}/questions` | Ask a question about extracted text |
 
-Example requests:
+Uploads are limited to 10 MB and checked before parsing. Answers are selected from document sentences; they are not generated. Set `API_BASE` to the API URL ending in `/api` for the examples below.
 
 ```sh
-curl -F "file=@agreement.pdf" -F "title=Services agreement" http://localhost:3001/api/contracts
-curl http://localhost:3001/api/contracts
-curl -X PATCH http://localhost:3001/api/contracts/CONTRACT_UUID/status
-curl -X POST http://localhost:3001/api/contracts/CONTRACT_UUID/questions \
+curl -F "file=@agreement.pdf" -F "title=Services agreement" "$API_BASE/contracts"
+curl "$API_BASE/contracts"
+curl -X PATCH "$API_BASE/contracts/CONTRACT_UUID/status"
+curl -X POST "$API_BASE/contracts/CONTRACT_UUID/questions" \
   -H "Content-Type: application/json" -d '{"question":"When does the agreement begin?"}'
 ```
 
-Question answering is intentionally literal: it ranks extracted sentences by how many question keywords they contain and returns the best match, or says that no answer was found. It does not interpret clauses or generate legal advice. The health endpoint confirms only that Express is responding; database readiness depends on `DATABASE_URL` and applying the schema.
+## Deploy from Git
+
+### Render — Spring Boot API
+
+Create a Blueprint from this repository, or configure a Web Service with these exact settings:
+
+| Setting | Value |
+| --- | --- |
+| Root Directory | `server` |
+| Runtime | Docker |
+| Dockerfile Path | `./Dockerfile` |
+| Docker Context | `.` |
+| Health Check Path | `/api/health` |
+
+The Docker build uses Maven and Eclipse Temurin Java 21, then starts the executable Spring Boot jar. To build and run it locally from `server/`, use `mvn -DskipTests package` and `java -jar target/contract-manager-1.0.0.jar`.
+
+Set these Render environment variables: `SUPABASE_DB_URL`, `SUPABASE_DB_USER`, `SUPABASE_DB_PASSWORD`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `CORS_ALLOWED_ORIGINS`. Set `SUPABASE_STORAGE_BUCKET=contracts`; Render supplies `PORT`. Mark credentials as secret. Set CORS to the exact deployed Vercel origin, for example `https://your-project.vercel.app`; add a custom domain origin if used. Do not include a path or trailing slash.
+
+Flyway applies/records migrations during startup. The database schema script is also provided for manual setup in Supabase. This project uses persistent Supabase Storage for documents and does not depend on Render's ephemeral filesystem.
+
+### Vercel — React/Vite client
+
+Import the same repository as a separate Vercel project with:
+
+| Setting | Value |
+| --- | --- |
+| Root Directory | `client` |
+| Framework Preset | Vite |
+| Build Command | `npm run build` |
+| Output Directory | `dist` |
+| Environment Variable | `VITE_API_BASE_URL=https://YOUR-RENDER-SERVICE.onrender.com/api` |
+
+Set `VITE_API_BASE_URL` for Production and any Preview/Development environments that should use the deployed API. It must include `/api`; Vite embeds this public API URL into the client bundle. Do not add Supabase credentials to Vercel.
+
+## Build and tests
+
+Run from the repository root:
+
+```sh
+mvn -f server/pom.xml clean verify
+cd client
+npm ci
+npm run build
+```
+
+This repository is configured for deployment but is not connected to live Supabase, Render, or Vercel projects. Deployment and the end-to-end hosted contract workflow have not been verified.

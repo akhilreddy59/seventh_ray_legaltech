@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 
-const API = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api';
+const API = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '');
 const nextStatus = { DRAFT: 'REVIEW', REVIEW: 'APPROVED' };
 
 async function request(path, options = {}) {
+  if (!API) throw new Error('Set VITE_API_BASE_URL to the Spring Boot API URL.');
   const response = await fetch(`${API}${path}`, options);
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(body.error || 'Something went wrong. Please try again.');
@@ -94,7 +95,7 @@ export default function App() {
           <section className="document-section"><div className="subhead"><h3>Document text</h3><span>EXTRACTED PREVIEW</span></div><div className="document-preview">{selected.extracted_text ? selected.extracted_text.slice(0, 5000) : 'No readable text could be extracted from this document.'}{selected.extracted_text?.length > 5000 ? '…' : ''}</div></section>
           <section className="workflow"><div><div className="eyebrow">NEXT STEP</div><h3>{nextStatus[selected.status] ? `Move to ${nextStatus[selected.status].toLowerCase()}` : 'Workflow complete'}</h3><p>{selected.status === 'DRAFT' ? 'Ready for a first review?' : selected.status === 'REVIEW' ? 'Has the review been completed?' : 'This contract has been approved.'}</p></div><button className="button button-outline" onClick={advanceStatus} disabled={busy || !nextStatus[selected.status]}>{nextStatus[selected.status] ? `Advance to ${nextStatus[selected.status]}` : 'Approved'} <span aria-hidden="true">→</span></button></section>
           <section className="qa"><div className="subhead"><div><div className="eyebrow">A CLOSER LOOK</div><h3>Ask this contract</h3></div><span>KEYWORD SEARCH</span></div><form className="question-form" onSubmit={ask}><input value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="e.g. When does the agreement begin?" aria-label="Question about this contract" /><button className="button button-dark" disabled={busy || !question.trim()}>Ask <span aria-hidden="true">↗</span></button></form>{answer && <div className="answer"><div className="eyebrow">FROM THE DOCUMENT</div><p>{answer}</p></div>}</section>
-        </> : <div className="welcome"><div className="welcome-icon">⌑</div><div className="eyebrow">A CLEARER VIEW OF WHAT MATTERS</div><h2>Your agreements,<br />at a glance.</h2><p>Select a contract from the register to read its details, move it through review, or ask a question about its contents.</p><div className="welcome-rule" /><small>Private by design. Your original files stay on this server.</small></div>}
+        </> : <div className="welcome"><div className="welcome-icon">⌑</div><div className="eyebrow">A CLEARER VIEW OF WHAT MATTERS</div><h2>Your agreements,<br />at a glance.</h2><p>Select a contract from the register to read its details, move it through review, or ask a question about its contents.</p><div className="welcome-rule" /><small>Private by design. Originals are kept in Supabase Storage.</small></div>}
       </section>
     </div>
     {(error || notice) && <div className={`toast ${error ? 'toast-error' : ''}`} role="status">{error || notice}<button aria-label="Dismiss message" onClick={() => { setError(''); setNotice(''); }}>×</button></div>}
