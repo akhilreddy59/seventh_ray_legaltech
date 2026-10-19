@@ -6,7 +6,7 @@ const nextStatus = { DRAFT: 'REVIEW', REVIEW: 'APPROVED' };
 
 async function request(path, options = {}) {
   if (!API) throw new Error('Set VITE_API_BASE_URL to the Spring Boot API URL.');
-  if (!supabase) throw new Error('Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to enable sign-in.');
+  if (!supabase) throw new Error('Set VITE_SUPABASE_URL and SUPABASE_ANON_KEY to enable sign-in.');
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error('Sign in to access your contracts.');
   const send = (token) => {

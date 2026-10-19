@@ -30,7 +30,7 @@ This is one repository with two separately deployed applications. Node.js and th
 | `CORS_ALLOWED_ORIGINS` | `https://seventh-ray-legaltech.vercel.app,http://localhost:5173` (comma-separated exact origins, no paths or trailing slashes) |
 | `PORT` | HTTP port; defaults to Render's `10000`; local `.env.example` sets it to `8080` |
 
-The client also needs `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in addition to `VITE_API_BASE_URL`. These three values are safe client configuration; do not put the service-role key in the client. There are no real credentials in the repository. Local file uploads are not used; files are stored in Supabase Storage.
+The client also needs `VITE_SUPABASE_URL` and `SUPABASE_ANON_KEY` in addition to `VITE_API_BASE_URL`. These three values are safe client configuration; do not put the service-role key in the client. There are no real credentials in the repository. Local file uploads are not used; files are stored in Supabase Storage.
 
 Existing contracts will have a null owner after V2 and therefore will not appear in any user's register. If you want to assign old rows to one account, sign in once, get that user's UUID from Supabase Authentication → Users, and run `UPDATE public.contracts SET owner_id = 'USER_UUID' WHERE owner_id IS NULL;` in the SQL Editor. Do this only if those old documents belong to that person.
 
@@ -53,7 +53,7 @@ Get-Content .env | Where-Object { $_ -match '^[A-Za-z_][A-Za-z0-9_]*=' } | ForEa
 mvn spring-boot:run
 ```
 
-Copy `client/.env.example` to `client/.env` for local development. Set its `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` from Supabase; keep its API URL at `http://localhost:8080/api`. Then run the frontend:
+Copy `client/.env.example` to `client/.env` for local development. Set its `VITE_SUPABASE_URL` and `SUPABASE_ANON_KEY` from Supabase; keep its API URL at `http://localhost:8080/api`. Then run the frontend:
 
 ```sh
 cd client
@@ -122,7 +122,7 @@ Import the same repository as a separate Vercel project with:
 | Output Directory | `dist` |
 | Environment Variable | `VITE_API_BASE_URL=https://YOUR-RENDER-SERVICE.onrender.com/api` |
 | Environment Variable | `VITE_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co` |
-| Environment Variable | `VITE_SUPABASE_ANON_KEY=YOUR_SUPABASE_PUBLIC_ANON_OR_PUBLISHABLE_KEY` |
+| Environment Variable | `SUPABASE_ANON_KEY=YOUR_SUPABASE_PUBLIC_ANON_OR_PUBLISHABLE_KEY` |
 
 Replace the placeholder values with your project details and set all three variables in Vercel for Production and any Preview/Development environments. The API URL must include `/api`. The anon/publishable key is public; do not add the service-role key to Vercel.
 
