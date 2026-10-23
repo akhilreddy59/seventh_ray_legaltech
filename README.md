@@ -137,4 +137,4 @@ npm ci
 npm run build
 ```
 
-This repository is configured for deployment but is not connected to live Supabase, Render, or Vercel projects. Deployment and the end-to-end hosted contract workflow have not been verified.
+## This repository is configured for deployment but is not connected to live Supabase, Render, or Vercel projects. Deployment and the end-to-end hosted contract workflow have not been verified.
